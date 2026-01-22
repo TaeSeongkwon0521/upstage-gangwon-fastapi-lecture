@@ -1,4 +1,4 @@
-name: EC2 K8s Deploy (Versioned)
+name: Deploy to EC2 K8s
 
 on:
   push:
@@ -13,12 +13,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    env:
-      IMAGE_NAME: gangwon-taeseong
-      REGISTRY: ghcr.io
-
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Login to GHCR
@@ -28,41 +24,34 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate Version
+      - name: Generate version tag
         id: version
         run: |
-          VER=$(grep '^version' pyproject.toml | cut -d '"' -f2)
+          VERSION=$(grep '^version' pyproject.toml | cut -d '"' -f2)
           HASH=$(git rev-parse --short=7 HEAD)
-          TAG="${VER}-${HASH}"
+          TAG="${VERSION}-${HASH}"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Build & Push Image
+      - name: Build & Push Docker image
         run: |
-          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE="ghcr.io/${OWNER}/${IMAGE_NAME}:${{ steps.version.outputs.tag }}"
-          docker build -t $IMAGE .
-          docker push $IMAGE
+          IMAGE=ghcr.io/${{ github.repository_owner }}/gangwon-taeseong
+          docker buildx build \
+            --platform linux/amd64 \
+            -t $IMAGE:${{ steps.version.outputs.tag }} \
+            --push .
 
-      - name: Deploy on EC2 Kubernetes
+      - name: Deploy to K8s via EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
             cd /home/ubuntu/workspace3/upstage-gangwon-fastapi-lecture
 
-            git checkout deploy/version
-            git pull
+            IMAGE=ghcr.io/${{ github.repository_owner }}/gangwon-taeseong:${{ steps.version.outputs.tag }}
 
-            OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-            IMAGE="ghcr.io/${OWNER}/${IMAGE_NAME}:${{ steps.version.outputs.tag }}"
+            sed -i "s|image: .*gangwon-taeseong.*|image: $IMAGE|" infra/k8s/application/04-backend.yaml
 
-            FILE=infra/k8s/application/04-backend.yaml
-            cp $FILE ${FILE}.bak
-            sed -i "s|^\(\s*image:\s*\).*|\1$IMAGE|g" $FILE
-
-            kubectl apply -f $FILE
-            mv ${FILE}.bak $FILE
+            kubectl apply -n taeseong -f infra/k8s/application/04-backend.yaml
 
