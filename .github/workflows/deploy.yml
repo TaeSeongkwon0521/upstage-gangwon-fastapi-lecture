@@ -67,6 +67,7 @@ PY
           TAG="${{ steps.version.outputs.tag }}"
           echo "IMAGE=$IMAGE"
           echo "TAG=$TAG"
+
           docker buildx build \
             --platform linux/amd64 \
             -t "${IMAGE}:${TAG}" \
