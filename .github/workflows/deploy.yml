@@ -24,17 +24,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate version tag
-        id: version
+      - name: Prepare image meta (lowercase owner)
+        id: meta
         run: |
-          VERSION=$(grep '^version' pyproject.toml | cut -d '"' -f2)
-          HASH=$(git rev-parse --short=7 HEAD)
-          TAG="${VERSION}-${HASH}"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          OWNER_LC=$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')
+          echo "owner_lc=$OWNER_LC" >> $GITHUB_OUTPUT
 
       - name: Build & Push Docker image
         run: |
-          IMAGE=ghcr.io/${{ github.repository_owner }}/gangwon-taeseong
+          IMAGE=ghcr.io/${{ steps.meta.outputs.owner_lc }}/gangwon-taeseong
           docker buildx build \
             --platform linux/amd64 \
             -t $IMAGE:${{ steps.version.outputs.tag }} \
@@ -49,8 +47,8 @@ jobs:
           script: |
             cd /home/ubuntu/workspace3/upstage-gangwon-fastapi-lecture
 
-            IMAGE=ghcr.io/${{ github.repository_owner }}/gangwon-taeseong:${{ steps.version.outputs.tag }}
-
+            IMAGE=ghcr.io/${{ steps.meta.outputs.owner_lc }}/gangwon-taeseong:${{ steps.version.outputs.tag }}
+            
             sed -i "s|image: .*gangwon-taeseong.*|image: $IMAGE|" infra/k8s/application/04-backend.yaml
 
             kubectl apply -n taeseong -f infra/k8s/application/04-backend.yaml
